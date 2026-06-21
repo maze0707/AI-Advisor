@@ -4,6 +4,10 @@ import time
 from pathlib import Path
 
 import psutil
+import subprocess
+import platform
+import tempfile
+import re
 
 
 def get_system_info():
@@ -206,32 +210,161 @@ def get_upgrade_advice():
 
 def get_battery_health_info():
     battery = psutil.sensors_battery()
-
+    # Provide quick data if psutil can see the battery at least
     if battery is None:
+        psutil_available = False
+    else:
+        psutil_available = True
+        percent = round(battery.percent, 1)
+        plugged_in = battery.power_plugged
+
+    # Only attempt the deeper Windows battery report on Windows systems
+    if platform.system().lower() != "windows":
+        if not psutil_available:
+            return {
+                "available": False,
+                "summary": "Battery information is not available on this computer.",
+                "plain_english": "This may happen on a desktop PC or if Windows does not expose battery data here.",
+            }
+
+        note = (
+            "I can see the current battery level, but a detailed Windows battery report is only available on Windows."
+        )
+        if percent < 20 and not plugged_in:
+            note = "The battery is low right now. Plug in the charger soon."
+
         return {
-            "available": False,
-            "summary": "Battery information is not available on this computer.",
-            "plain_english": "This may happen on a desktop PC or if Windows does not expose battery data here.",
+            "available": True,
+            "percent": percent,
+            "plugged_in": plugged_in,
+            "summary": note,
+            "plain_english": (
+                "True battery health means how much charge the battery can still hold compared with when it was new. "
+                "On Windows I can generate a battery report to estimate that.")
         }
 
-    percent = round(battery.percent, 1)
-    plugged_in = battery.power_plugged
+    # Attempt to run powercfg to create a temporary battery report
+    design_capacity = None
+    full_charge_capacity = None
+    cycle_count = None
+    report_path = None
 
-    note = (
-        "I can see the current battery level, but not the long-term battery health yet."
-    )
-    if percent < 20 and not plugged_in:
-        note = "The battery is low right now. Plug in the charger soon."
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as tf:
+            report_path = tf.name
+
+        subprocess.run(
+            ["powercfg", "/batteryreport", "/output", report_path],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        # Read the generated report and search for the fields we need
+        with open(report_path, "r", encoding="utf-8", errors="ignore") as f:
+            html = f.read()
+
+        # Helper to parse numeric values with commas (mWh)
+        def parse_mwh(label):
+            m = re.search(rf"{label}.*?>([\d,]+)\s*mWh", html, re.IGNORECASE | re.DOTALL)
+            if m:
+                return int(m.group(1).replace(",", ""))
+            return None
+
+        design_capacity = parse_mwh("DESIGN CAPACITY")
+        full_charge_capacity = parse_mwh("FULL CHARGE CAPACITY")
+
+        m_cycle = re.search(r"CYCLE COUNT.*?>(\d+)", html, re.IGNORECASE | re.DOTALL)
+        if m_cycle:
+            cycle_count = int(m_cycle.group(1))
+
+    except Exception:
+        # Fall back to any existing bundled report in the backend folder
+        try:
+            bundled = Path(__file__).parent / "battery-report.html"
+            if bundled.exists():
+                with open(bundled, "r", encoding="utf-8", errors="ignore") as f:
+                    html = f.read()
+
+                def parse_mwh_local(label):
+                    m = re.search(rf"{label}.*?>([\d,]+)\s*mWh", html, re.IGNORECASE | re.DOTALL)
+                    if m:
+                        return int(m.group(1).replace(",", ""))
+                    return None
+
+                design_capacity = parse_mwh_local("DESIGN CAPACITY")
+                full_charge_capacity = parse_mwh_local("FULL CHARGE CAPACITY")
+                m_cycle = re.search(r"CYCLE COUNT.*?>(\d+)", html, re.IGNORECASE | re.DOTALL)
+                if m_cycle:
+                    cycle_count = int(m_cycle.group(1))
+        except Exception:
+            pass
+    finally:
+        # Clean up temporary report if one was created
+        try:
+            if report_path and Path(report_path).exists():
+                Path(report_path).unlink()
+        except Exception:
+            pass
+
+    # If we obtained capacities, compute health
+    if design_capacity and full_charge_capacity:
+        health_percent = round((full_charge_capacity / design_capacity) * 100, 1)
+        wear_percent = round(100.0 - health_percent, 1)
+
+        if health_percent >= 90:
+            health_note = f"Battery health is excellent — approximately {health_percent}% of original capacity remains."
+        elif health_percent >= 70:
+            health_note = f"Battery shows moderate wear — about {health_percent}% of original capacity remains."
+        else:
+            health_note = f"Battery is significantly worn — about {health_percent}% of original capacity remains and replacement may be considered."
+
+        plain = (
+            f"Design capacity: {design_capacity:,} mWh. Full charge capacity: {full_charge_capacity:,} mWh. "
+            f"Estimated health: {health_percent}% (wear {wear_percent}%)."
+        )
+        if cycle_count is not None:
+            plain += f" Cycle count: {cycle_count}."
+
+        result = {
+            "available": True,
+            "design_capacity_mwh": design_capacity,
+            "full_charge_capacity_mwh": full_charge_capacity,
+            "health_percent": health_percent,
+            "wear_percent": wear_percent,
+            "cycle_count": cycle_count,
+            "summary": health_note,
+            "plain_english": plain,
+        }
+        # include psutil snapshot if available
+        if psutil_available:
+            result.update({"percent": percent, "plugged_in": plugged_in})
+
+        return result
+
+    # If capacities aren't available, fall back to psutil-level info
+    if psutil_available:
+        note = (
+            "I can see the current battery level, but couldn't parse a Windows battery report to estimate long-term health."
+        )
+        if percent < 20 and not plugged_in:
+            note = "The battery is low right now. Plug in the charger soon."
+
+        return {
+            "available": True,
+            "percent": percent,
+            "plugged_in": plugged_in,
+            "summary": note,
+            "plain_english": (
+                "True battery health means how much charge the battery can still hold compared with when it was new. "
+                "On Windows, try running AI Advisor with administrator rights if the report generation failed."
+            ),
+        }
 
     return {
-        "available": True,
-        "percent": percent,
-        "plugged_in": plugged_in,
-        "summary": note,
-        "plain_english": (
-            "True battery health means how much charge the battery can still hold compared with when it was new. "
-            "That needs a deeper Windows battery report, which we can add later."
-        ),
+        "available": False,
+        "summary": "Battery information is not available on this computer.",
+        "plain_english": "This may happen on a desktop PC or if Windows does not expose battery data here.",
     }
 
 
