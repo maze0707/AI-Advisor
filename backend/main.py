@@ -3,12 +3,21 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from system_scanner import (
     check_software_requirements,
+    get_app_compatibility,
+    get_app_issue_explanation,
     get_battery_health_info,
     get_large_files,
+    get_performance_explanation,
     get_security_check,
     get_slow_apps,
+    get_system_diagnostics,
     get_system_info,
+    get_storage_insights,
     get_upgrade_advice,
+    get_full_diagnosis,
+    get_startup_insights,
+    get_suspicious_processes,
+    get_thermal_status,
 )
 
 app = FastAPI()
@@ -60,6 +69,63 @@ def upgrade_advice():
 @app.get("/battery-health")
 def battery_health():
     return get_battery_health_info()
+
+
+@app.get("/system-diagnostics")
+def system_diagnostics():
+    return get_system_diagnostics()
+
+
+@app.get("/performance-explanation")
+def performance_explanation():
+    return get_performance_explanation()
+
+
+@app.get("/storage-insights")
+def storage_insights():
+    return get_storage_insights()
+
+
+@app.get("/diagnose")
+def diagnose(
+    app_name: str | None = None,
+    required_memory_gb: float | None = None,
+    required_storage_gb: float | None = None,
+):
+    return get_full_diagnosis(app_name, required_memory_gb, required_storage_gb)
+
+
+@app.get("/startup-insights")
+def startup_insights():
+    return get_startup_insights()
+
+
+@app.get("/suspicious-processes")
+def suspicious_processes(limit: int | None = 10):
+    return get_suspicious_processes(limit=limit or 10)
+
+
+@app.get("/thermal-status")
+def thermal_status():
+    return get_thermal_status()
+
+
+@app.get("/app-compatibility")
+def app_compatibility(
+    app_name: str | None = None,
+    required_memory_gb: float | None = None,
+    required_storage_gb: float | None = None,
+):
+    return get_app_compatibility(app_name, required_memory_gb, required_storage_gb)
+
+
+@app.get("/app-issue-explanation")
+def app_issue_explanation(
+    app_name: str | None = None,
+    required_memory_gb: float | None = None,
+    required_storage_gb: float | None = None,
+):
+    return get_app_issue_explanation(app_name, required_memory_gb, required_storage_gb)
 
 
 @app.get("/security-check")

@@ -102,6 +102,7 @@ def get_system_info():
         },
         "battery": battery_info,
         "recommendations": recommendations,
+        "what_to_do_next": recommendations,
     }
 
 
@@ -208,6 +209,287 @@ def get_upgrade_advice():
     }
 
 
+def get_system_diagnostics():
+    cpu_percent = psutil.cpu_percent(interval=1)
+    memory = psutil.virtual_memory()
+    storage = shutil.disk_usage("C:\\")
+    battery = psutil.sensors_battery()
+    top_apps = get_slow_apps(limit=5).get("apps", [])
+
+    total_memory_gb = round(memory.total / (1024**3), 1)
+    available_memory_gb = round(memory.available / (1024**3), 1)
+    storage_free_percent = round((storage.free / storage.total) * 100, 1)
+
+    issues = []
+    next_steps = []
+
+    if cpu_percent >= 85:
+        issues.append(
+            {
+                "issue": "Processor is very busy",
+                "detail": "Your computer's processor is working very hard right now, which can make apps feel slow or unresponsive.",
+            }
+        )
+        next_steps.append(
+            "Close demanding apps or browser tabs so the processor can focus on the task you care about."
+        )
+    elif cpu_percent >= 60:
+        issues.append(
+            {
+                "issue": "Processor is moderately busy",
+                "detail": "Your processor is doing a lot of work right now, so some apps may feel a bit slow.",
+            }
+        )
+
+    if available_memory_gb < 2:
+        issues.append(
+            {
+                "issue": "Low available memory",
+                "detail": f"Your computer has only about {available_memory_gb} GB of free memory, which can make multitasking slow.",
+            }
+        )
+        next_steps.append(
+            "Close unused apps and browser tabs, or consider adding more memory if you often keep many programs open."
+        )
+    elif available_memory_gb < 4:
+        issues.append(
+            {
+                "issue": "Limited free memory",
+                "detail": f"There is only about {available_memory_gb} GB of free memory available right now.",
+            }
+        )
+
+    if storage_free_percent < 10:
+        issues.append(
+            {
+                "issue": "Low disk space",
+                "detail": f"Your main drive is only {storage_free_percent}% free, which can slow down the computer and make apps harder to open.",
+            }
+        )
+        next_steps.append(
+            "Free up disk space by deleting or moving large files, or uninstall apps you no longer use."
+        )
+    elif storage_free_percent < 20:
+        issues.append(
+            {
+                "issue": "Less than ideal free storage",
+                "detail": f"Your drive has only {storage_free_percent}% free, so it may feel sluggish when saving files or opening apps.",
+            }
+        )
+
+    if battery is not None:
+        if not battery.power_plugged and battery.percent < 20:
+            issues.append(
+                {
+                    "issue": "Low battery",
+                    "detail": f"Your battery is at {round(battery.percent, 1)}% and not plugged in, which can cause the system to slow down to save power.",
+                }
+            )
+            next_steps.append(
+                "Plug in your charger to stop the computer from slowing down on battery power."
+            )
+    else:
+        issues.append(
+            {
+                "issue": "No battery information",
+                "detail": "This computer either does not have a battery or Windows is not exposing battery details.",
+            }
+        )
+
+    if top_apps:
+        busy_apps = [app for app in top_apps if app["cpu_percent"] >= 10 or app["memory_mb"] >= 500]
+        if busy_apps:
+            app_names = [app["name"] for app in busy_apps[:3]]
+            issues.append(
+                {
+                    "issue": "High resource apps running",
+                    "detail": f"Apps like {', '.join(app_names)} are using a lot of processor or memory right now.",
+                }
+            )
+            next_steps.append(
+                "Close these heavy apps if you do not need them right now."
+            )
+
+    if not issues:
+        summary = "I don't see any big problems causing your computer to slow down right now."
+        plain_english = "Your computer looks okay for everyday tasks. If it still feels slow, the next simple step is to restart and close apps you are not using."
+        next_steps = [
+            "Restart the computer and close any apps you are not using.",
+            "If it still feels slow after that, check back later when you are not running many apps."
+        ]
+        what_this_means = "Your system is behaving normally, so the slowdown is likely temporary or caused by the apps you are using now."
+    else:
+        summary = "I found the most likely reasons your computer is feeling slow right now."
+        plain_english = "Here are a few things that could be making your computer feel slower than usual, and the easiest steps to fix them."
+        what_this_means = "Your computer performance is being affected by one or more resource issues that are easy to address."
+
+    return {
+        "summary": summary,
+        "plain_english": plain_english,
+        "what_this_means": what_this_means,
+        "what_to_do_next": next_steps,
+        "reasons": issues,
+        "top_apps": busy_apps if busy_apps else [],
+    }
+
+
+def get_storage_insights():
+    storage = shutil.disk_usage("C:\\")
+    free_storage_gb = round(storage.free / (1024**3), 1)
+    free_percent = round((storage.free / storage.total) * 100, 1)
+    details = []
+
+    if free_percent < 10:
+        summary = "Your main drive is very low on space right now."
+        details.append(
+            "With less than 10% free space, your computer can slow down and apps may have trouble saving files."
+        )
+        next_steps = [
+            "Move large files to another drive or external storage.",
+            "Delete old downloads, videos, or apps you do not need."
+        ]
+    elif free_percent < 20:
+        summary = "Your drive is getting crowded."
+        details.append(
+            f"Only about {free_percent}% of your main drive is free, so the computer may feel a little sluggish."
+        )
+        next_steps = [
+            "Remove files or apps you do not use anymore.",
+            "Look at the biggest files in your Documents and Downloads folders."
+        ]
+    else:
+        summary = "Your disk space looks okay right now."
+        details.append(
+            "You have enough free storage for normal use, but it is good to keep some room available."
+        )
+        next_steps = [
+            "Try not to let your drive get too full, especially below 20% free space."
+        ]
+
+    return {
+        "summary": summary,
+        "free_storage_gb": free_storage_gb,
+        "free_percent": free_percent,
+        "details": details,
+        "what_this_means": " ".join(details),
+        "what_to_do_next": next_steps,
+        "large_files": get_large_files(limit=5)["files"] if free_percent < 25 else [],
+    }
+
+
+def get_performance_explanation():
+    diagnostic = get_system_diagnostics()
+    return {
+        "summary": diagnostic["summary"],
+        "plain_english": diagnostic["plain_english"],
+        "what_this_means": diagnostic["what_this_means"],
+        "what_to_do_next": diagnostic["what_to_do_next"],
+        "reasons": diagnostic["reasons"],
+        "top_apps": diagnostic["top_apps"],
+    }
+
+
+def get_app_issue_explanation(app_name=None, required_memory_gb=None, required_storage_gb=None):
+    compatibility = get_app_compatibility(app_name, required_memory_gb, required_storage_gb)
+    return {
+        "summary": compatibility["summary"],
+        "plain_english": compatibility["plain_english"],
+        "what_this_means": compatibility["plain_english"],
+        "what_to_do_next": compatibility["next_steps"],
+        "results": compatibility["results"],
+        "app_name": compatibility["app_name"],
+    }
+
+
+def get_full_diagnosis(app_name=None, required_memory_gb=None, required_storage_gb=None):
+    return {
+        "system_info": get_system_info(),
+        "performance": get_performance_explanation(),
+        "storage": get_storage_insights(),
+        "battery": get_battery_health_info(),
+        "app_issue": get_app_issue_explanation(app_name, required_memory_gb, required_storage_gb),
+    }
+
+
+def get_app_compatibility(app_name=None, required_memory_gb=None, required_storage_gb=None):
+    memory = psutil.virtual_memory()
+    storage = shutil.disk_usage("C:\\")
+
+    total_memory_gb = round(memory.total / (1024**3), 1)
+    free_storage_gb = round(storage.free / (1024**3), 1)
+    results = []
+    next_steps = []
+    app_label = app_name or "This app"
+
+    if required_memory_gb is not None:
+        can_meet_memory = total_memory_gb >= required_memory_gb
+        results.append(
+            {
+                "requirement": "memory",
+                "needed_gb": required_memory_gb,
+                "your_computer_gb": total_memory_gb,
+                "passes": can_meet_memory,
+            }
+        )
+        if not can_meet_memory:
+            next_steps.append(
+                f"Close other programs and browser tabs, or use a computer with at least {required_memory_gb} GB of RAM."
+            )
+
+    if required_storage_gb is not None:
+        can_meet_storage = free_storage_gb >= required_storage_gb
+        results.append(
+            {
+                "requirement": "free_storage",
+                "needed_gb": required_storage_gb,
+                "your_computer_gb": free_storage_gb,
+                "passes": can_meet_storage,
+            }
+        )
+        if not can_meet_storage:
+            next_steps.append(
+                f"Free up at least {required_storage_gb - free_storage_gb:.1f} GB by deleting files or using another drive."
+            )
+
+    if not results:
+        return {
+            "summary": "Please tell me the app's memory or storage requirements so I can check compatibility.",
+            "plain_english": "Give me the app's minimum RAM and storage needs to see if your computer can run it.",
+            "results": [],
+            "next_steps": ["Try the same check again with the app's requirements."],
+        }
+
+    can_run = all(result["passes"] for result in results)
+    if can_run:
+        summary = f"{app_label} looks like it can run on this computer based on the numbers you gave me."
+        plain_english = f"Your computer has enough memory and free storage space for {app_label}."
+        next_steps.append(f"Try opening {app_label} now.")
+    else:
+        summary = f"{app_label} may not start because your computer does not meet one or more requirements."
+        reasons = []
+        if required_memory_gb is not None and total_memory_gb < required_memory_gb:
+            reasons.append(
+                f"You have {total_memory_gb} GB of RAM, but {app_label} needs {required_memory_gb} GB."
+            )
+        if required_storage_gb is not None and free_storage_gb < required_storage_gb:
+            reasons.append(
+                f"You have {free_storage_gb} GB free, but {app_label} needs {required_storage_gb} GB."
+            )
+        plain_english = " ".join(reasons)
+        if not next_steps:
+            next_steps.append("Check the app's requirements and try again after freeing space or closing other programs.")
+
+    return {
+        "summary": summary,
+        "plain_english": plain_english,
+        "results": results,
+        "next_steps": next_steps,
+        "app_name": app_name,
+        "your_memory_gb": total_memory_gb,
+        "your_free_storage_gb": free_storage_gb,
+    }
+
+
 def get_battery_health_info():
     battery = psutil.sensors_battery()
     # Provide quick data if psutil can see the battery at least
@@ -223,12 +505,12 @@ def get_battery_health_info():
         if not psutil_available:
             return {
                 "available": False,
-                "summary": "Battery information is not available on this computer.",
-                "plain_english": "This may happen on a desktop PC or if Windows does not expose battery data here.",
+                "summary": "I can't read battery details on this computer right now.",
+                "plain_english": "This may happen on a desktop PC or if Windows is not exposing battery information."
             }
 
         note = (
-            "I can see the current battery level, but a detailed Windows battery report is only available on Windows."
+            "I can see the current battery charge, but a full battery health read is only available on Windows."
         )
         if percent < 20 and not plugged_in:
             note = "The battery is low right now. Plug in the charger soon."
@@ -239,8 +521,9 @@ def get_battery_health_info():
             "plugged_in": plugged_in,
             "summary": note,
             "plain_english": (
-                "True battery health means how much charge the battery can still hold compared with when it was new. "
-                "On Windows I can generate a battery report to estimate that.")
+                "Battery health means how much charge your battery can hold compared with when it was new. "
+                "On Windows, I can make a report to estimate that better."
+            ),
         }
 
     # Attempt to run powercfg to create a temporary battery report
@@ -278,8 +561,9 @@ def get_battery_health_info():
         if m_cycle:
             cycle_count = int(m_cycle.group(1))
 
-    except Exception:
+    except Exception as e:
         # Fall back to any existing bundled report in the backend folder
+        report_error = str(e)
         try:
             bundled = Path(__file__).parent / "battery-report.html"
             if bundled.exists():
@@ -350,7 +634,7 @@ def get_battery_health_info():
         if percent < 20 and not plugged_in:
             note = "The battery is low right now. Plug in the charger soon."
 
-        return {
+        result = {
             "available": True,
             "percent": percent,
             "plugged_in": plugged_in,
@@ -360,6 +644,10 @@ def get_battery_health_info():
                 "On Windows, try running AI Advisor with administrator rights if the report generation failed."
             ),
         }
+        # include any report error message for debugging
+        if 'report_error' in locals():
+            result['report_error'] = report_error
+        return result
 
     return {
         "available": False,
@@ -471,5 +759,198 @@ def check_software_requirements(required_memory_gb=None, required_storage_gb=Non
         "results": results,
         "plain_english": (
             "This is a simple check. Games and heavy apps also depend on graphics hardware, which we have not added yet."
+        ),
+    }
+
+
+def get_startup_insights():
+    """Return a beginner-friendly summary of startup items (Windows only).
+
+    This checks common Registry Run keys and the user/common Startup folders.
+    """
+    if platform.system().lower() != "windows":
+        return {
+            "available": False,
+            "summary": "Startup item details are only available on Windows.",
+            "plain_english": (
+                "I can check which programs start automatically on Windows. "
+                "On macOS or Linux, startup mechanisms differ — tell me if you want those."
+            ),
+        }
+
+    startup_entries = []
+    try:
+        import winreg
+
+        keys = [
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"),
+        ]
+
+        for hive, key_path in keys:
+            try:
+                with winreg.OpenKey(hive, key_path) as k:
+                    i = 0
+                    while True:
+                        try:
+                            name, val, _ = winreg.EnumValue(k, i)
+                            startup_entries.append({"source": key_path, "name": name, "command": val})
+                            i += 1
+                        except OSError:
+                            break
+            except FileNotFoundError:
+                continue
+    except Exception:
+        # If winreg not available or access denied, fall back to no entries
+        pass
+
+    # Check Start Menu Startup folders
+    try:
+        user_start = Path(os.environ.get("APPDATA", "")) / r"Microsoft\\Windows\\Start Menu\\Programs\\Startup"
+        common_start = Path(os.environ.get("PROGRAMDATA", "")) / r"Microsoft\\Windows\\Start Menu\\Programs\\Startup"
+        for folder in (user_start, common_start):
+            if folder.exists():
+                for f in folder.iterdir():
+                    try:
+                        startup_entries.append({"source": str(folder), "name": f.name, "command": str(f)})
+                    except Exception:
+                        continue
+    except Exception:
+        pass
+
+    summary = "I found a few programs set to start automatically." if startup_entries else "I did not find startup items in common places."
+    plain = (
+        "Programs that start automatically can make your computer take longer to become responsive after a restart. "
+        "If you don't need a program right away, removing it from startup can speed things up."
+    )
+
+    # Keep the output small for non-technical users
+    brief = []
+    for entry in startup_entries[:8]:
+        brief.append({"source": entry.get("source"), "name": entry.get("name")})
+
+    return {
+        "available": True,
+        "summary": summary,
+        "plain_english": plain,
+        "sample_items": brief,
+        "count": len(startup_entries),
+    }
+
+
+def get_suspicious_processes(limit=10):
+    """Return processes that may warrant attention with conservative heuristics."""
+    suspicious = []
+    processes = []
+
+    for proc in psutil.process_iter(["pid", "name"]):
+        try:
+            proc.cpu_percent(interval=None)
+            processes.append(proc)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
+    time.sleep(0.3)
+
+    for proc in processes:
+        try:
+            name = proc.name() or "<unknown>"
+            pid = proc.pid
+            cpu = round(proc.cpu_percent(interval=None), 1)
+            mem_mb = round(proc.memory_info().rss / (1024**2), 1)
+            exe = None
+            reason = []
+            try:
+                exe = proc.exe()
+                exe_lower = exe.lower()
+                if "\\temp\\" in exe_lower or "downloads" in exe_lower:
+                    reason.append("Running from a temporary or downloads folder")
+            except (psutil.AccessDenied, psutil.NoSuchProcess, FileNotFoundError):
+                exe = None
+
+            # Heuristic flags
+            if cpu >= 30:
+                reason.append(f"High CPU usage ({cpu}%)")
+            if mem_mb >= 500:
+                reason.append(f"High memory use ({mem_mb} MB)")
+
+            if reason:
+                suspicious.append({
+                    "pid": pid,
+                    "name": name,
+                    "cpu_percent": cpu,
+                    "memory_mb": mem_mb,
+                    "exe": exe,
+                    "reasons": reason,
+                })
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
+    suspicious.sort(key=lambda x: (x["cpu_percent"], x["memory_mb"]), reverse=True)
+    return {
+        "summary": "These processes may deserve attention.",
+        "plain_english": (
+            "I use simple checks like high CPU/memory and where the program is running from. "
+            "If you don't recognize a process or it's using lots of resources, consider closing it."
+        ),
+        "processes": suspicious[:limit],
+    }
+
+
+def get_thermal_status():
+    """Try to read temperature sensors; fall back to Windows WMIC if needed."""
+    temps = {}
+    try:
+        # psutil may not have sensors_temperatures in some builds
+        if hasattr(psutil, "sensors_temperatures"):
+            raw = psutil.sensors_temperatures()
+            for name, entries in (raw or {}).items():
+                temps[name] = [
+                    {"label": e.label, "current_c": round(e.current, 1)} for e in entries[:5]
+                ]
+    except Exception:
+        temps = {}
+
+    # If psutil returned values, present them
+    if temps:
+        return {
+            "available": True,
+            "summary": "Temperature sensors are available on this machine.",
+            "plain_english": "The temperatures below show current sensor readings in Celsius.",
+            "sensors": temps,
+        }
+
+    # Try WMIC fallback on Windows
+    if platform.system().lower() == "windows":
+        try:
+            res = subprocess.run(
+                ["wmic", "/namespace:\\root\\wmi", "PATH", "MSAcpi_ThermalZoneTemperature", "get", "CurrentTemperature"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            lines = [l.strip() for l in res.stdout.splitlines() if l.strip()]
+            temps_list = []
+            for line in lines:
+                if line.isdigit():
+                    # value is in tenths of Kelvin
+                    c = int(line) / 10.0 - 273.15
+                    temps_list.append(round(c, 1))
+            if temps_list:
+                return {
+                    "available": True,
+                    "summary": "Thermal readings available via WMIC.",
+                    "plain_english": "Temperatures are best-effort values from Windows sensors.",
+                    "temperatures_c": temps_list,
+                }
+        except Exception:
+            pass
+
+    return {
+        "available": False,
+        "summary": "Temperature sensors are not available.",
+        "plain_english": (
+            "I couldn't find temperature readings. Some machines or Python installs don't expose sensor data. "
+            "You can use vendor tools (Dell/HP) or OpenHardwareMonitor for detailed thermal info."
         ),
     }
