@@ -2,11 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, X, Send, Cpu, Loader2, Sparkles, CheckCircle2 } from 'lucide-react';
 
-export default function LiveAdvisorChat({ telemetry, hasScanned }) {
+export default function LiveAdvisorChat({ telemetry, hasScanned, sessionToken }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState([
-    { role: 'model', content: "Hey there! I'm your digital desktop helper. Ask me anything about how your computer is feeling today! ✨" }
-  ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   
@@ -15,6 +12,24 @@ export default function LiveAdvisorChat({ telemetry, hasScanned }) {
   const [optimizationResult, setOptimizationResult] = useState('');
 
   const messagesEndRef = useRef(null);
+
+  // Unique local storage key tied directly to the current logged-in token
+  const storageKey = `purradvisor_chat_history_${sessionToken}`;
+
+  // Initialize messages from localStorage if they exist, or fall back to default greeting
+  const [messages, setMessages] = useState(() => {
+    const savedMessages = localStorage.getItem(storageKey);
+    return savedMessages ? JSON.parse(savedMessages) : [
+      { role: 'model', content: "Hey there! I'm your digital desktop helper. Ask me anything about how your computer is feeling today! ✨" }
+    ];
+  });
+
+  // Save messages automatically to browser memory whenever the message array or token shifts
+  useEffect(() => {
+    if (sessionToken) {
+      localStorage.setItem(storageKey, JSON.stringify(messages));
+    }
+  }, [messages, storageKey, sessionToken]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -135,7 +150,9 @@ export default function LiveAdvisorChat({ telemetry, hasScanned }) {
                 <Cpu size={18} className="text-neutral-400 animate-pulse" />
                 <div>
                   <h3 className="font-semibold text-sm tracking-wide">ADVISOR COMPANION</h3>
-                  <span className="text-[10px] text-neutral-400 uppercase tracking-widest font-mono">Here to help baby-step by baby-step</span>
+                  <span className="text-[10px] text-neutral-400 uppercase tracking-widest font-mono">
+                    SESSION TOKEN: {sessionToken || 'GUEST'}
+                  </span>
                 </div>
               </div>
             </div>
