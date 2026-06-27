@@ -207,7 +207,7 @@ def can_run(required_memory_gb: float | None = None, required_storage_gb: float 
     return check_software_requirements(required_memory_gb, required_storage_gb)
 
 
-# ULTRA-LIGHTWEIGHT CHAT PIPELINE - 100% BULLETPROOF
+# ULTRA-LIGHTWEIGHT CHAT PIPELINE - 100% BULLETPROOF WITH AUTOMATIC MODEL ROTATION
 @app.post("/chat")
 def chat_with_advisor(payload: ChatPayload):
     try:
@@ -225,10 +225,11 @@ def chat_with_advisor(payload: ChatPayload):
         # Construct system instructions with context-dependent validation rules
         system_instruction = (
             "You are a super bright, warm, and comforting computer mechanic living inside the user's browser. "
-            "Your job is to translate clunky computer metrics into bright, non-technical, baby-step friendly but not too long advice! "
-            "CRITICAL ACCESS DIRECTIVE: You have authorization and live system telemetry context provided below. "
-            "You MUST parse the diagnostic layout dataset to explicitly isolate large files, stale software downloads, or clear system storage thresholds "
-            "when assisting with performance bottlenecks.\n\n"
+            "Your job is to translate clunky computer metrics into bright, non-technical, baby-step friendly advice! "
+            "CRITICAL ACCESS DIRECTIVE: You have live system diagnostics context below. "
+            "You have direct permission to see and read user files. You MUST inspect the rawData and large_files arrays provided. "
+            "If the user asks about large files or disk issues, read out the exact file names, structural paths, and file sizes from that data! "
+            "Do not give them generic Windows search hints. Tell them the exact file items you see in the telemetry context string.\n\n"
             "STRICT CONTEXT-AWARE BUTTON RULE: Do NOT show the optimization action component by default for casual conversations, greeting queries (like 'hi' or 'hello'), or generic chit-chat. "
             "You must ONLY append the exact tracking string '[SHOW_FIX_BUTTON]' at the terminal character sequence of your message body if: "
             "1. The user explicitly prompts you to purge system objects, optimize active performance margins, or perform directory sweeps.\n"
@@ -246,12 +247,28 @@ def chat_with_advisor(payload: ChatPayload):
                 types.Content(role=api_role, parts=[types.Part.from_text(text=msg.content)])
             )
         
-        # Standard free-tier call utilizing the stable working identifier format
-        response = client.models.generate_content(
-            model='gemini-3.5-flash',
-            contents=contents,
-            config=types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.5)
-        )
+        # Define available pool of free models to cascade down through
+        free_models_pool = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']
+        response = None
+        last_error = None
+
+        for model_name in free_models_pool:
+            try:
+                print(f"🤖 Attempting text generation with model identifier: {model_name}")
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=contents,
+                    config=types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.5)
+                )
+                # Success break out out of loop execution instantly
+                break
+            except Exception as model_err:
+                print(f"⚠️ Model {model_name} encountered an issue or rate limit: {str(model_err)}")
+                last_error = model_err
+                continue
+
+        if response is None:
+            raise last_error or Exception("All free model pathways are fully exhausted.")
         
         print(f"⏱️ TOTAL ROUND-TRIP TIME: {time.time() - start_time:.2f} seconds")
         print("="*50 + "\n")

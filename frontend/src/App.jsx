@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
-import { ArrowUpRight, Cpu, HardDrive, ShieldCheck, Activity, RefreshCw, Monitor } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowUpRight, Cpu, HardDrive, ShieldCheck, Activity, RefreshCw, Monitor, Zap, Search, MessageSquare, ArrowRight } from 'lucide-react';
 import HeroAssistant from './components/HeroAssistant.jsx';
 import LiveAdvisorChat from './components/LiveAdvisorChat.jsx';
 
@@ -19,23 +19,20 @@ function App() {
   });
 
   const [isScanning, setIsScanning] = useState(false);
+  
+  // Tracker state to reveal the advisor button only after data arrives from the backend
+  const [hasUserRunScanYet, setHasUserRunScanYet] = useState(false);
 
-  // Core telemetry fetch routine connecting the operational API endpoints
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+
+  // --- RESTORED: FAST TELEMETRY SCANNING ROUTINE ---
   const fetchLiveTelemetry = useCallback((isManualClick = false) => {
-
-    // Only flash the button's loading text if a human physically clicks it
     if (isManualClick) {
       setIsScanning(true);
     }
 
-    
-    // STRATEGY: Query same-host backend. During dev, frontend and backend may be served from different ports,
-    // so we include a fallback to localhost/127.0.0.1.
-    const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
-    const primary = `${baseUrl}/system-info`;
-
-    fetch(primary)
-
+    // Hit the instant lightweight endpoint instead of the heavy drive walker
+    fetch(`${baseUrl}/system-info`)
       .then((res) => {
         if (!res.ok) throw new Error("Localhost down");
         return res.json();
@@ -44,7 +41,6 @@ function App() {
         updateTelemetryState(data);
       })
       .catch(() => {
-        // Absolute fallback: Try direct IP address line if DNS splits
         fetch('http://127.0.0.1:8000/system-info')
           .then((res) => {
             if (!res.ok) throw new Error("IP line down");
@@ -52,26 +48,19 @@ function App() {
           })
           .then((data) => updateTelemetryState(data))
           .catch((err) => {
-            console.error('All fallback pathways are exhausted:', err);
-            setTelemetry({
-              cpu: 'Offline',
-              memory: 'Offline',
-              storage: 'Offline',
-              status: 'Unlinked'
-            });
-            setIsScanning(false); // Unlocks spinner button on complete failure
+            console.error('All pathways down:', err);
+            setTelemetry(prev => ({ ...prev, status: 'Unlinked' }));
+          })
+          .finally(() => {
+            if (isManualClick) setIsScanning(false);
           });
       });
-  }, []);
+  }, [baseUrl]);
 
-  // Helper routine to unpack data variables cleanly
+  // Packs fields instantly into cards without freezing layout loops
   const updateTelemetryState = (data) => {
-    console.log("Real-time payload received:", data);
-    
-    // Backend returns nested objects from /system-info:
-    // data.cpu.usage_percent, data.memory.total_gb / data.memory.available_gb, data.storage.free_percent
     const cpuLoad = data?.cpu?.usage_percent !== undefined ? `${data.cpu.usage_percent}%` : '0%';
-
+    
     let ramDisplay = '0 GB';
     if (data?.memory?.total_gb !== undefined && data?.memory?.available_gb !== undefined) {
       const usedRam = data.memory.total_gb - data.memory.available_gb;
@@ -79,7 +68,6 @@ function App() {
     }
 
     const diskFree = data?.storage?.free_percent !== undefined ? `${data.storage.free_percent}% Free` : '0% Free';
-
     const gpuName = data?.gpu?.primary_name ?? 'Unknown GPU';
     const osType = data?.os?.type ?? 'Windows (unknown)';
     const osVersion = data?.os?.version ?? '';
@@ -94,19 +82,16 @@ function App() {
       status: 'Active'
     });
 
-    
-    setIsScanning(false); // Unlocks the spinning button loop immediately on success!
+    setHasUserRunScanYet(true);
+    setIsScanning(false);
   };
 
-  // Polling is intentionally disabled until the user presses RUN LIVE SCAN.
-  // After starting, it live-updates every 2 seconds.
   const [pollingEnabled, setPollingEnabled] = useState(false);
 
   useEffect(() => {
     if (!pollingEnabled) return;
 
     fetchLiveTelemetry(false);
-
     const heartbeatInterval = setInterval(() => {
       fetchLiveTelemetry(false);
     }, 2000);
@@ -115,9 +100,45 @@ function App() {
   }, [pollingEnabled, fetchLiveTelemetry]);
 
 
-  // NOTE: Removed automatic polling on page load.
+  // --- INTERACTIVE AUTOPLAY RUNBOOK CAROUSEL CONTROLS ---
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
 
+  const steps = [
+    {
+      step: "01",
+      title: "Initialize Live Scan",
+      desc: "Tap the 'Run Live Scan' action trigger button. Our lightweight core background probe will securely poll and decode your desktop's hardware data metrics instantly.",
+      icon: <Zap size={24} className="text-black" />,
+      bg: "bg-white border-black/10"
+    },
+    {
+      step: "02",
+      title: "Review Your Overwatch Cards",
+      desc: "Inspect your system parameters directly via real-time dashboard layout matrices. Read easy-to-digest breakdowns tracking your Processor load, Drive matrix balance, and Memory stacks.",
+      icon: <Search size={24} className="text-black" />,
+      bg: "bg-white border-black/10"
+    },
+    {
+      step: "03",
+      title: "Chat with PurrAdvisor",
+      desc: "Once the baseline snapshot updates, connect instantly with your AI Advisor panel. Get custom, jargon-free optimization steps and trigger secure temporary folder sweeps automatically.",
+      icon: <MessageSquare size={24} className="text-black" />,
+      bg: "bg-white border-black/10"
+    }
+  ];
 
+  // Force-advance step action handler
+  const handleNextStep = useCallback(() => {
+    setCurrentStepIndex((prev) => (prev + 1) % steps.length);
+  }, [steps.length]);
+
+  // Auto-cycles the runbook metrics sequentially every 4.5 seconds smoothly
+  useEffect(() => {
+    const cycleTimer = setInterval(() => {
+      handleNextStep();
+    }, 4500);
+    return () => clearInterval(cycleTimer);
+  }, [handleNextStep]);
 
   return (
     <div className="w-full min-h-screen bg-transparent text-black relative selection:bg-black selection:text-white">
@@ -130,7 +151,6 @@ function App() {
           </span>
           <span className="text-[10px] bg-black/5 px-2 py-0.5 rounded text-black font-mono font-medium">V2.6</span>
           
-          {/* THE NEW DYNAMIC STATUS BADGE BUBBLE */}
           <div className="flex items-center gap-1.5 ml-2 bg-black/5 px-2 py-0.5 rounded text-[10px] font-mono">
             <span className={`w-1.5 h-1.5 rounded-full ${
               telemetry.status === 'Active' ? 'bg-emerald-500 animate-pulse' : 
@@ -144,31 +164,29 @@ function App() {
         
         <nav className="flex items-center gap-8 text-sm font-outfit font-medium tracking-wide text-black/80">
           <button 
-  onClick={() => setActiveTab('overview')} 
-  className={`transition-colors hover:text-black ${activeTab === 'overview' ? 'text-black font-bold border-b-2 border-black' : ''}`}
->
-  ENGINE_LOG
-</button>
+            onClick={() => setActiveTab('overview')} 
+            className={`transition-colors hover:text-black ${activeTab === 'overview' ? 'text-black font-bold border-b-2 border-black' : ''}`}
+          >
+            ENGINE_LOG
+          </button>
 
-<button 
-  onClick={() => setActiveTab('analytics')} 
-  className={`transition-colors hover:text-black ${activeTab === 'analytics' ? 'text-black font-bold border-b-2 border-black' : ''}`}
->
-  SPECIFICATIONS
-</button>
+          <button 
+            onClick={() => setActiveTab('analytics')} 
+            className={`transition-colors hover:text-black ${activeTab === 'analytics' ? 'text-black font-bold border-b-2 border-black' : ''}`}
+          >
+            SPECIFICATIONS
+          </button>
 
-{/* PASS true INTO THE fetchLiveTelemetry CALL HERE */}
-<button 
-  onClick={() => {
-    setPollingEnabled(true);
-    fetchLiveTelemetry(true);
-    document.getElementById('live-scan-anchor')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }} 
-  className="bg-black text-white font-medium px-4 py-2 rounded-full text-xs hover:bg-neutral-800 transition-all flex items-center gap-1"
->
-  RUN LIVE SCAN <ArrowUpRight size={14} />
-</button>
-
+          <button 
+            onClick={() => {
+              setPollingEnabled(true);
+              fetchLiveTelemetry(true);
+              document.getElementById('live-scan-anchor')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }} 
+            className="bg-black text-white font-medium px-4 py-2 rounded-full text-xs hover:bg-neutral-800 transition-all flex items-center gap-1"
+          >
+            RUN LIVE SCAN <ArrowUpRight size={14} />
+          </button>
         </nav>
       </header>
 
@@ -181,7 +199,6 @@ function App() {
           </h1>
         </div>
         <div className="lg:col-span-4 pb-4"> 
-          {/* Hero description replaced with an interactive animated assistant. */}
           <HeroAssistant />
         </div> 
       </section>
@@ -198,8 +215,78 @@ function App() {
         </div>
       </section>
 
-      {/* 4. DYNAMIC CARD MATRIX LAYOUT */}
-      <section id="diagnose" className="w-full max-w-7xl mx-auto px-6 py-12 border-t border-black/10">
+      {/* 4. IMMERSIVE RUNBOOK (ARROW NAVIGATION CONTROL INCLUDED) */}
+      <section className="w-full max-w-7xl mx-auto px-6 py-20 border-t border-black/10 bg-transparent">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+          
+          {/* LEFT SIDE: Permanent static typography guide */}
+          <div className="lg:col-span-5 space-y-6">
+            <div className="space-y-2">
+              <span className="text-xs font-mono text-black/40 uppercase tracking-widest block">// SETUP GUIDE ENGINE</span>
+              <h3 className="font-outfit font-black text-3xl md:text-5xl tracking-tight text-black leading-tight">
+                How to use <br />this application:
+              </h3>
+            </div>
+            
+            {/* Steps & Next Button Action Group */}
+            <div className="flex items-center gap-4 pt-2">
+              <div className="flex items-center gap-2">
+                {steps.map((_, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setCurrentStepIndex(idx)}
+                    className={`h-1.5 transition-all duration-300 rounded-full ${currentStepIndex === idx ? 'w-8 bg-black' : 'w-2 bg-black/20'}`}
+                    aria-label={`Go to step ${idx + 1}`}
+                  />
+                ))}
+              </div>
+
+              {/* Explicit Next Step Click Action Trigger */}
+              <button
+                onClick={handleNextStep}
+                className="group p-2 rounded-full border border-black/10 hover:border-black/40 bg-white shadow-sm flex items-center justify-center transition-all"
+                aria-label="Next step"
+              >
+                <ArrowRight size={16} className="text-black group-hover:translate-x-0.5 transition-transform" />
+              </button>
+            </div>
+          </div>
+
+          {/* RIGHT SIDE: Interactive swapping card deck block */}
+          <div className="lg:col-span-7 relative h-[340px] w-full flex items-center justify-center">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={currentStepIndex}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.35, ease: "easeInOut" }}
+                className={`absolute inset-0 w-full h-full ${steps[currentStepIndex].bg} border p-8 sm:p-10 rounded-[32px] flex flex-col justify-between shadow-sm`}
+              >
+                <div className="flex justify-between items-start w-full">
+                  <div className="bg-black/5 p-4 rounded-2xl">{steps[currentStepIndex].icon}</div>
+                  <span className="font-mono text-5xl font-black text-black/10 tracking-tighter">
+                    {steps[currentStepIndex].step}
+                  </span>
+                </div>
+                
+                <div className="space-y-2 max-w-xl mt-auto">
+                  <h4 className="font-outfit font-black text-xl md:text-2xl tracking-tight text-black">
+                    {steps[currentStepIndex].title}
+                  </h4>
+                  <p className="text-sm sm:text-base text-black/60 font-outfit leading-relaxed">
+                    {steps[currentStepIndex].desc}
+                  </p>
+                </div>
+              </motion.div>
+            </AnimatePresence>
+          </div>
+
+        </div>
+      </section>
+
+      {/* 5. DYNAMIC CARD MATRIX LAYOUT */}
+      <section id="diagnose" className="w-full max-w-7xl mx-auto px-6 py-12 border-t border-black/10 relative z-40 bg-transparent">
         <div className="w-full pt-4 mb-12 flex justify-between items-center">
           <span className="font-mono text-xs text-black font-bold uppercase tracking-wider">// SYSTEM OVERWATCH LIVE SNAPSHOT</span>
           <span className={`w-2 h-2 rounded-full ${telemetry.status === 'Active' ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
@@ -209,15 +296,11 @@ function App() {
           {[
             { title: 'Core Processor', metric: telemetry.cpu, icon: <Cpu size={20} />, status: telemetry.status === 'Active' ? 'Reading' : telemetry.status },
             { title: 'Memory Stack', metric: telemetry.memory, icon: <Activity size={20} />, status: telemetry.status === 'Active' ? 'Reading' : telemetry.status },
-
             { title: 'GPU', metric: telemetry.gpu, icon: <Monitor size={20} />, status: telemetry.status === 'Active' ? 'Reading' : telemetry.status },
             { title: 'Windows Type/Version', metric: telemetry.os, icon: <ShieldCheck size={20} />, status: telemetry.status === 'Active' ? 'Active' : telemetry.status },
-
             { title: 'Drive Matrix', metric: telemetry.storage, icon: <HardDrive size={20} />, status: telemetry.status === 'Active' ? 'Reading' : telemetry.status },
             { title: 'System Safety', metric: telemetry.status === 'Active' ? 'Secured' : 'Offline', icon: <ShieldCheck size={20} />, status: telemetry.status === 'Active' ? 'Active' : telemetry.status },
           ].map((item, index) => (
-
-
             <motion.div 
               key={index}
               whileHover={{ y: -6, borderColor: 'rgba(0, 0, 0, 0.4)' }}
@@ -229,7 +312,6 @@ function App() {
               </div>
               <div className="space-y-1">
                 <p className="text-xs text-black/70 font-outfit uppercase tracking-wider font-bold">{item.title}</p>
-                {/* Windows Type/Version should be slightly larger but not overflow; allow wrapping */}
                 <h3 className={`font-outfit font-black tracking-tight text-black ${item.title === 'Windows Type/Version' ? 'text-2xl md:text-xl' : 'text-2xl'} whitespace-normal break-words`}>
                   {item.metric}
                 </h3>
@@ -257,8 +339,7 @@ function App() {
 
       </section>
 
-      {/* Pass the real-time telemetry state into the chat manager dynamically */}
-<LiveAdvisorChat telemetry={telemetry} />
+      <LiveAdvisorChat telemetry={telemetry} hasScanned={hasUserRunScanYet} />
 
       {/* 5. MINIMAL ARCHIVE FOOTER */}
       <footer className="w-full max-w-7xl mx-auto px-6 py-8 border-t border-black/10 flex flex-col sm:flex-row justify-between items-center text-xs text-black font-mono font-medium">

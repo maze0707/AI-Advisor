@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, X, Send, Cpu, Loader2, Sparkles, CheckCircle2 } from 'lucide-react';
 
-export default function LiveAdvisorChat({ telemetry }) {
+export default function LiveAdvisorChat({ telemetry, hasScanned }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([
     { role: 'model', content: "Hey there! I'm your digital desktop helper. Ask me anything about how your computer is feeling today! ✨" }
@@ -84,16 +84,41 @@ export default function LiveAdvisorChat({ telemetry }) {
       className="fixed bottom-6 right-6 z-50 font-outfit"
       style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999 }}
     >
-      {/* Floating Toggle Button */}
-      <motion.button
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        onClick={() => setIsOpen(!isOpen)}
-        className="bg-black text-white p-4 rounded-full shadow-2xl flex items-center justify-center border border-white/20 hover:bg-neutral-900 transition-colors"
-        style={{ width: '56px', height: '56px', cursor: 'pointer' }}
-      >
-        {isOpen ? <X size={24} /> : <MessageSquare size={24} />}
-      </motion.button>
+      {/* Premium On-Demand Advisor Trigger Button (Only displays after a system scan executes) */}
+      <AnimatePresence>
+        {hasScanned && !isOpen && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.8, y: 15 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.8, y: 15 }}
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={() => setIsOpen(true)}
+            className="bg-black text-white px-5 py-3.5 rounded-xl shadow-2xl flex items-center gap-2 border border-white/20 hover:bg-neutral-900 transition-colors font-medium text-xs uppercase tracking-wider"
+            style={{ cursor: 'pointer' }}
+          >
+            <Sparkles size={14} className="text-amber-400 animate-pulse" />
+            Connect with PurrPCScan Advisor now
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      {/* Embedded Floating Close Trigger Button when Workspace Panel is Open */}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.5 }}
+            whileHover={{ scale: 1.1 }}
+            onClick={() => setIsOpen(false)}
+            className="absolute -top-14 right-0 bg-black text-white p-2.5 rounded-full border border-white/10 shadow-lg hover:bg-neutral-900 transition-colors"
+            style={{ cursor: 'pointer', zIndex: 10000 }}
+          >
+            <X size={16} />
+          </motion.button>
+        )}
+      </AnimatePresence>
 
       {/* Main Chat Interface Window */}
       <AnimatePresence>
@@ -102,7 +127,7 @@ export default function LiveAdvisorChat({ telemetry }) {
             initial={{ opacity: 0, y: 40, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 40, scale: 0.95 }}
-            className="absolute bottom-20 right-0 w-[380px] sm:w-[420px] h-[520px] bg-[#ece2e8] text-[#141b1d] border border-black/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            className="absolute bottom-0 right-0 w-[95vw] sm:w-[650px] h-[460px] bg-[#ece2e8] text-[#141b1d] border border-black/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
           >
             {/* Header Area */}
             <div className="bg-black text-white p-4 flex items-center justify-between">
@@ -202,8 +227,8 @@ export default function LiveAdvisorChat({ telemetry }) {
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask me something easy about your PC..."
-                className="flex-1 bg-neutral-50 px-4 py-2 rounded-xl text-sm border border-neutral-200 focus:outline-none focus:border-black transition-colors"
+                placeholder="Throw your PC Troubles!"
+                className="flex-1 bg-neutral-50 px-4 py-8.5 rounded-xl text-sm border border-neutral-200 focus:outline-none focus:border-black transition-colors"
                 disabled={isLoading}
               />
               <button
