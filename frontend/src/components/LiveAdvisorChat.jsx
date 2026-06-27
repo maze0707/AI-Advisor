@@ -98,7 +98,7 @@ export default function LiveAdvisorChat({ telemetry, hasScanned }) {
             style={{ cursor: 'pointer' }}
           >
             <Sparkles size={14} className="text-amber-400 animate-pulse" />
-            Connect with PurrPCScan Advisor now
+            Summon PurrPCScan Advisor now!
           </motion.button>
         )}
       </AnimatePresence>
